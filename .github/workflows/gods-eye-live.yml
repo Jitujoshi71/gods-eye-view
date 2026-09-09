@@ -15,7 +15,7 @@ jobs:
       - name: Checkout God's Eye View
         uses: actions/checkout@v4
 
-      - name: Setup Node.js 24
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 24.14.0
@@ -24,17 +24,21 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Check environment
+      - name: Run doctor
         run: npm run doctor
 
       - name: Start God's Eye View
         run: |
-          nohup npm run dev -- --host 0.0.0.0 --port 4173 \
+          nohup npm run dev -- \
+            --host 0.0.0.0 \
+            --port 4173 \
+            --strictPort \
+            --allowed-hosts all \
             > gods-eye.log 2>&1 &
 
           echo $! > gods-eye.pid
 
-          echo "Waiting for server..."
+          echo "Waiting for God's Eye View..."
 
           for i in {1..60}; do
             if curl -fsS http://127.0.0.1:4173/ >/dev/null 2>&1; then
@@ -44,6 +48,7 @@ jobs:
 
             if [ "$i" -eq 60 ]; then
               echo "ERROR: God's Eye View failed to start."
+              echo "========== SERVER LOG =========="
               cat gods-eye.log
               exit 1
             fi
@@ -65,7 +70,7 @@ jobs:
 
           cloudflared --version
 
-      - name: Start public Cloudflare tunnel
+      - name: Start Cloudflare Tunnel
         run: |
           nohup cloudflared tunnel \
             --no-autoupdate \
@@ -74,7 +79,7 @@ jobs:
 
           echo $! > cloudflare.pid
 
-          echo "Waiting for Cloudflare public URL..."
+          echo "Waiting for public URL..."
 
           for i in {1..60}; do
             URL=$(grep -oE 'https://[a-zA-Z0-9.-]+\.trycloudflare\.com' cloudflare.log | head -n 1 || true)
@@ -82,7 +87,7 @@ jobs:
             if [ -n "$URL" ]; then
               echo ""
               echo "======================================================"
-              echo "             GOD'S EYE VIEW IS LIVE"
+              echo "              GOD'S EYE VIEW IS LIVE"
               echo "======================================================"
               echo ""
               echo "PUBLIC URL:"
@@ -99,7 +104,7 @@ jobs:
 
             if [ "$i" -eq 60 ]; then
               echo "ERROR: Cloudflare tunnel failed."
-              echo ""
+              echo "========== CLOUDFLARE LOG =========="
               cat cloudflare.log
               exit 1
             fi
@@ -107,7 +112,7 @@ jobs:
             sleep 2
           done
 
-      - name: Keep God's Eye View online
+      - name: Keep server alive
         run: |
           echo ""
           echo "======================================================"
@@ -117,19 +122,19 @@ jobs:
           echo ""
 
           while true; do
-
             if ! kill -0 "$(cat gods-eye.pid)" 2>/dev/null; then
-              echo "ERROR: God's Eye process stopped."
+              echo "ERROR: God's Eye View stopped."
+              echo "========== SERVER LOG =========="
               cat gods-eye.log
               exit 1
             fi
 
             if ! kill -0 "$(cat cloudflare.pid)" 2>/dev/null; then
               echo "ERROR: Cloudflare Tunnel stopped."
+              echo "========== CLOUDFLARE LOG =========="
               cat cloudflare.log
               exit 1
             fi
 
             sleep 30
-
           done
