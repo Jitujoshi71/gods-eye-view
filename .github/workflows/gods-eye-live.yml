@@ -12,10 +12,10 @@ jobs:
     timeout-minutes: 350
 
     steps:
-      - name: Checkout God's Eye View
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node.js 24
         uses: actions/setup-node@v4
         with:
           node-version: 24.14.0
@@ -24,16 +24,20 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run doctor
+      - name: Run project doctor
         run: npm run doctor
 
       - name: Start God's Eye View
+        env:
+          HOST: 0.0.0.0
+          PORT: 4173
         run: |
+          echo "Starting God's Eye View..."
+
           nohup npm run dev -- \
             --host 0.0.0.0 \
             --port 4173 \
             --strictPort \
-            --allowed-hosts all \
             > gods-eye.log 2>&1 &
 
           echo $! > gods-eye.pid
@@ -42,14 +46,19 @@ jobs:
 
           for i in {1..60}; do
             if curl -fsS http://127.0.0.1:4173/ >/dev/null 2>&1; then
+              echo ""
               echo "God's Eye View started successfully."
+              echo ""
               break
             fi
 
             if [ "$i" -eq 60 ]; then
+              echo ""
               echo "ERROR: God's Eye View failed to start."
-              echo "========== SERVER LOG =========="
+              echo ""
+              echo "========== GOD'S EYE LOG =========="
               cat gods-eye.log
+              echo ""
               exit 1
             fi
 
@@ -58,6 +67,8 @@ jobs:
 
       - name: Install Cloudflare Tunnel
         run: |
+          echo "Installing cloudflared..."
+
           curl -L \
             --fail \
             --silent \
@@ -66,12 +77,17 @@ jobs:
             -o cloudflared
 
           chmod +x cloudflared
+
           sudo mv cloudflared /usr/local/bin/cloudflared
 
+          echo ""
           cloudflared --version
+          echo ""
 
-      - name: Start Cloudflare Tunnel
+      - name: Start Cloudflare Quick Tunnel
         run: |
+          echo "Starting Cloudflare Tunnel..."
+
           nohup cloudflared tunnel \
             --no-autoupdate \
             --url http://127.0.0.1:4173 \
@@ -79,23 +95,27 @@ jobs:
 
           echo $! > cloudflare.pid
 
-          echo "Waiting for public URL..."
+          echo "Waiting for Cloudflare public URL..."
 
           for i in {1..60}; do
+
             URL=$(grep -oE 'https://[a-zA-Z0-9.-]+\.trycloudflare\.com' cloudflare.log | head -n 1 || true)
 
             if [ -n "$URL" ]; then
+
               echo ""
-              echo "======================================================"
-              echo "              GOD'S EYE VIEW IS LIVE"
-              echo "======================================================"
+              echo "============================================================"
+              echo "                  GOD'S EYE VIEW IS LIVE"
+              echo "============================================================"
               echo ""
               echo "PUBLIC URL:"
+              echo ""
               echo "$URL"
               echo ""
-              echo "OPEN THIS URL IN YOUR BROWSER"
+              echo "============================================================"
+              echo "Open the URL above in your browser."
+              echo "============================================================"
               echo ""
-              echo "======================================================"
 
               echo "PUBLIC_URL=$URL" >> "$GITHUB_ENV"
 
@@ -103,38 +123,60 @@ jobs:
             fi
 
             if [ "$i" -eq 60 ]; then
-              echo "ERROR: Cloudflare tunnel failed."
+              echo ""
+              echo "ERROR: Cloudflare Tunnel failed to start."
+              echo ""
               echo "========== CLOUDFLARE LOG =========="
               cat cloudflare.log
+              echo ""
               exit 1
             fi
 
             sleep 2
           done
 
-      - name: Keep server alive
+      - name: Show connection information
         run: |
           echo ""
-          echo "======================================================"
-          echo "God's Eye View is running."
+          echo "============================================================"
+          echo "                     CONNECTION INFO"
+          echo "============================================================"
+          echo ""
+          echo "God's Eye:"
+          echo "http://127.0.0.1:4173"
+          echo ""
+          echo "Public URL:"
+          echo "$PUBLIC_URL"
+          echo ""
+          echo "============================================================"
+          echo ""
+
+      - name: Keep God's Eye View running
+        run: |
+          echo "God's Eye View is now running."
           echo "Public URL: $PUBLIC_URL"
-          echo "======================================================"
           echo ""
 
           while true; do
+
             if ! kill -0 "$(cat gods-eye.pid)" 2>/dev/null; then
-              echo "ERROR: God's Eye View stopped."
-              echo "========== SERVER LOG =========="
+              echo ""
+              echo "ERROR: God's Eye View process stopped."
+              echo ""
+              echo "========== GOD'S EYE LOG =========="
               cat gods-eye.log
               exit 1
             fi
 
             if ! kill -0 "$(cat cloudflare.pid)" 2>/dev/null; then
+              echo ""
               echo "ERROR: Cloudflare Tunnel stopped."
+              echo ""
               echo "========== CLOUDFLARE LOG =========="
               cat cloudflare.log
               exit 1
             fi
 
             sleep 30
+
           done
